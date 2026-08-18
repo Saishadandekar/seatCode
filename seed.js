@@ -82,58 +82,61 @@ async function seed() {
     // 5. Seed zones
     console.log('Seeding zones...');
     const zones = [
-      { branch: 'CE',   division: 'A', anchor: 'S_1_1',   dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'CE',   division: 'B', anchor: 'S_1_6',   dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'IT',   division: 'A', anchor: 'S_1_11',  dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'IT',   division: 'B', anchor: 'S_1_16',  dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'EXTC', division: 'A', anchor: 'S_1_21',  dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'EXTC', division: 'B', anchor: 'S_11_1',  dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'ME',   division: 'A', anchor: 'S_11_6',  dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'ME',   division: 'B', anchor: 'S_11_11', dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'EE',   division: 'A', anchor: 'S_11_16', dir: 'RIGHT_DOWN', expected: 40 },
-      { branch: 'EE',   division: 'B', anchor: 'S_11_21', dir: 'RIGHT_DOWN', expected: 40 }
+      // Left wing (width 5, height 10)
+      { branch: 'COMPS', division: 'A', anchor: 'S_1_1',   dir: 'RIGHT_DOWN', expected: 70, w: 5, h: 10 },
+      { branch: 'IT',    division: 'C', anchor: 'S_11_1',  dir: 'RIGHT_DOWN', expected: 70, w: 5, h: 10 },
+      // Right wing (width 5, height 10)
+      { branch: 'IT',    division: 'B', anchor: 'S_1_21',  dir: 'RIGHT_DOWN', expected: 70, w: 5, h: 10 },
+      { branch: 'MECH',  division: '',  anchor: 'S_11_21', dir: 'RIGHT_DOWN', expected: 70, w: 5, h: 10 },
+      // Center section (Rows 1-10: height 10, Rows 11-20: height 10)
+      // Split columns 6-20 (15 cols) into 4 blocks of widths: 4, 4, 4, 3
+      { branch: 'COMPS', division: 'B', anchor: 'S_1_6',   dir: 'RIGHT_DOWN', expected: 70, w: 4, h: 10 },
+      { branch: 'COMPS', division: 'C', anchor: 'S_1_10',  dir: 'RIGHT_DOWN', expected: 70, w: 4, h: 10 },
+      { branch: 'IT',    division: 'A', anchor: 'S_1_14',  dir: 'RIGHT_DOWN', expected: 70, w: 4, h: 10 },
+      { branch: 'AIML',  division: '',  anchor: 'S_1_18',  dir: 'RIGHT_DOWN', expected: 70, w: 3, h: 10 },
+      { branch: 'AIDS',  division: '',  anchor: 'S_11_6',  dir: 'RIGHT_DOWN', expected: 70, w: 4, h: 10 },
+      { branch: 'CS&E',  division: '',  anchor: 'S_11_10', dir: 'RIGHT_DOWN', expected: 70, w: 4, h: 10 },
+      { branch: 'CIVIL', division: '',  anchor: 'S_11_14', dir: 'RIGHT_DOWN', expected: 70, w: 4, h: 10 },
+      { branch: 'EXTC',  division: '',  anchor: 'S_11_18', dir: 'RIGHT_DOWN', expected: 70, w: 3, h: 10 }
     ];
 
     const zoneInsertQuery = `
-      INSERT INTO zones (event_id, branch, division, anchor_seat_id, fill_direction, expected_count)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO zones (event_id, branch, division, anchor_seat_id, fill_direction, expected_count, width, height)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     `;
 
     for (const z of zones) {
-      await client.query(zoneInsertQuery, [eventId, z.branch, z.division, z.anchor, z.dir, z.expected]);
+      await client.query(zoneInsertQuery, [eventId, z.branch, z.division, z.anchor, z.dir, z.expected, z.w, z.h]);
     }
     console.log('Zones seeded.');
 
-    // 6. Seed Students (~5 branches x 2 divisions x 40 students = 400 students)
+    // 6. Seed Students (~12 zones x 70 students = 840 students)
     console.log('Seeding students and signing QR tokens (this may take a few seconds)...');
-    const branches = ['CE', 'IT', 'EXTC', 'ME', 'EE'];
-    const divisions = ['A', 'B'];
     
     await client.query('BEGIN');
     let studentCount = 0;
     
-    for (const branch of branches) {
-      for (const div of divisions) {
-        for (let i = 1; i <= 40; i++) {
-          const rollNo = `${branch}-${div}-${String(i).padStart(2, '0')}`;
-          const name = `${branch} Student ${div} #${i}`;
-          const year = 'FY';
-          // Sign token with student data
-          const qrToken = jwt.sign(
-            { rollNo, name, branch, division: div },
-            JWT_SECRET
-          );
-          
-          // Dicebear avatar as mock photo URL
-          const photoUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${rollNo}`;
-          
-          await client.query(
-            `INSERT INTO students (roll_no, name, branch, division, year, qr_token, photo_url)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [rollNo, name, branch, div, year, qrToken, photoUrl]
-          );
-          studentCount++;
-        }
+    for (const z of zones) {
+      for (let i = 1; i <= 70; i++) {
+        const rollNoStr = String(i).padStart(2, '0');
+        const rollNo = `23-${z.branch}${z.division}${rollNoStr}-27`;
+        const name = `${z.branch} Student ${z.division} #${i}`;
+        const year = 'FY';
+        // Sign token with student data
+        const qrToken = jwt.sign(
+          { rollNo, name, branch: z.branch, division: z.division },
+          JWT_SECRET
+        );
+        
+        // Dicebear avatar as mock photo URL
+        const photoUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${rollNo}`;
+        
+        await client.query(
+          `INSERT INTO students (roll_no, name, branch, division, year, qr_token, photo_url)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [rollNo, name, z.branch, z.division, year, qrToken, photoUrl]
+        );
+        studentCount++;
       }
     }
     await client.query('COMMIT');

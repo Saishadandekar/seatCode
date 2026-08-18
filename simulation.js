@@ -4,6 +4,17 @@
 const ROWS = 20;
 const COLS = 25;
 
+function getRowLabel(rowNum) {
+  let label = '';
+  let temp = rowNum;
+  while (temp > 0) {
+    let remainder = (temp - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    temp = Math.floor((temp - 1) / 26);
+  }
+  return label;
+}
+
 // Define Zones (5 branches x 2 divisions)
 // We map each zone to an anchor seat and a fill direction.
 // We assume a 20x25 grid (500 seats total).
@@ -162,7 +173,7 @@ class Auditorium {
     console.log('\n--- AUDITORIUM SEATING MAP (20x25) ---');
     console.log('   ' + Array.from({ length: COLS }, (_, i) => String(i + 1).padStart(2, '0')).join(' '));
     for (let r = 0; r < ROWS; r++) {
-      let rowStr = String(r + 1).padStart(2, '0') + ' ';
+      let rowStr = getRowLabel(r + 1).padStart(2, ' ') + ' ';
       for (let c = 0; c < COLS; c++) {
         const seat = this.grid[r][c];
         if (seat.student === null) {

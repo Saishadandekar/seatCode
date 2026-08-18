@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "concurrently \"nodemon server.js\" \"npm --prefix frontend run dev\"",
     "seed": "node seed.js",
     "simulation": "node simulation.js"
   },
@@ -20,6 +20,7 @@
     "socket.io": "^4.7.5"
   },
   "devDependencies": {
+    "concurrently": "^10.0.5",
     "nodemon": "^3.1.4"
   }
 }

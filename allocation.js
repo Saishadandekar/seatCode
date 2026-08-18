@@ -73,7 +73,7 @@ async function allocateSeat(client, eventId, student) {
 
   // 3. Fetch Zone configuration for this student's branch + division
   const zoneRes = await client.query(
-    `SELECT z.anchor_seat_id, z.fill_direction, z.expected_count,
+    `SELECT z.anchor_seat_id, z.fill_direction, z.expected_count, z.width, z.height,
             al.row_num as anchor_row, al.col_num as anchor_col
      FROM zones z
      JOIN auditorium_layout al ON z.anchor_seat_id = al.seat_id
@@ -85,7 +85,7 @@ async function allocateSeat(client, eventId, student) {
     throw new Error(`No zone configured for event ${eventId}, branch ${branch}, division ${division}`);
   }
 
-  const { anchor_seat_id, anchor_row, anchor_col, fill_direction } = zoneRes.rows[0];
+  const { anchor_seat_id, anchor_row, anchor_col, fill_direction, width, height } = zoneRes.rows[0];
 
   // We loop to handle potential concurrency race conditions on the chosen seat
   let attempts = 0;
@@ -94,15 +94,11 @@ async function allocateSeat(client, eventId, student) {
     let targetSeatId = null;
     let isOverflow = false;
 
-    // Define Zone preferred range (e.g., 5 columns wide, 10 rows deep from anchor)
-    // In our seed, divisions are CE-A, CE-B, etc., and they cover blocks:
-    // CE-A covers rows 1-10, cols 1-5.
-    // CE-B covers rows 1-10, cols 6-10.
-    // EXTC-B covers rows 11-20, cols 1-5.
+    // Define Zone preferred range
     const startRow = anchor_row;
-    const endRow = Math.min(20, anchor_row + 9);
+    const endRow = Math.min(20, anchor_row + height - 1);
     const startCol = anchor_col;
-    const endCol = Math.min(25, anchor_col + 4);
+    const endCol = Math.min(25, anchor_col + width - 1);
 
     let freePreferredSeats = [];
 
@@ -136,7 +132,8 @@ async function allocateSeat(client, eventId, student) {
         `SELECT al.seat_id, al.row_num, al.col_num
          FROM auditorium_layout al
          LEFT JOIN allocations a ON al.seat_id = a.seat_id AND a.event_id = $1
-         WHERE al.is_active = true AND a.id IS NULL`
+         WHERE al.is_active = true AND a.id IS NULL`,
+        [eventId]
       );
 
       const freeSeats = allFreeSeatsRes.rows;
@@ -181,7 +178,11 @@ async function allocateSeat(client, eventId, student) {
 
       if (doubleCheckRes.rows.length === 0 && seatLockRes.rows.length > 0) {
         // Seat is free! We allocate it.
-        const status = isOverflow ? 'overflow' : 'allocated';
+        const allocatedRow = seatLockRes.rows[0].row_num;
+        const allocatedCol = seatLockRes.rows[0].col_num;
+        const isWithinZone = allocatedRow >= startRow && allocatedRow <= endRow &&
+                             allocatedCol >= startCol && allocatedCol <= endCol;
+        const status = isWithinZone ? 'allocated' : 'overflow';
         await client.query(
           `INSERT INTO allocations (event_id, student_id, seat_id, status)
            VALUES ($1, $2, $3, $4)`,

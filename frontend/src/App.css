@@ -11,12 +11,15 @@
   --primary: #3b82f6;
   --primary-glow: rgba(59, 130, 246, 0.15);
   
-  --color-ce: #ef4444;      /* Red */
-  --color-it: #10b981;      /* Green */
-  --color-extc: #6366f1;    /* Indigo */
-  --color-me: #ec4899;      /* Pink */
-  --color-ee: #06b6d4;      /* Cyan */
-  --color-overflow: #f59e0b;/* Yellow/Amber */
+  --color-comps: #ef4444;     /* Coral Red */
+  --color-it: #10b981;        /* Green */
+  --color-aiml: #8b5cf6;      /* Violet */
+  --color-aids: #ec4899;      /* Fuchsia */
+  --color-cse: #f43f5e;       /* Rose */
+  --color-mech: #06b6d4;      /* Cyan */
+  --color-civil: #64748b;     /* Slate */
+  --color-extc: #6366f1;      /* Indigo */
+  --color-overflow: #f59e0b;  /* Amber/Yellow */
   
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --shadow-premium: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
@@ -205,17 +208,57 @@ main {
 /* Seating Map Grid */
 .grid-container {
   overflow-x: auto;
-  padding: 0.5rem;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 16px;
   border: 1px solid var(--border-color);
+}
+
+.auditorium-stage {
+  width: 60%;
+  margin: 0 auto 1.5rem auto;
+  padding: 0.6rem;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.12) 0%, rgba(59, 130, 246, 0.01) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-bottom: 3px solid var(--primary);
+  border-radius: 4px 4px 12px 12px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  color: #93c5fd;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.1);
+  text-transform: uppercase;
 }
 
 .seating-grid {
   display: grid;
-  grid-template-columns: auto repeat(25, 1fr);
+  grid-template-columns: auto repeat(5, 1fr) 24px repeat(15, 1fr) 24px repeat(5, 1fr);
   gap: 4px;
-  min-width: 720px;
+  min-width: 780px;
+}
+
+/* Seating aisles and stairs */
+.grid-aisle-vertical {
+  width: 24px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.015);
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255, 255, 255, 0.03) 5px, rgba(255, 255, 255, 0.03) 10px);
+  border-left: 1px dashed rgba(255, 255, 255, 0.05);
+  border-right: 1px dashed rgba(255, 255, 255, 0.05);
+}
+
+.grid-aisle-vertical-header {
+  width: 24px;
+  height: 20px;
+}
+
+.grid-aisle-horizontal {
+  background: rgba(255, 255, 255, 0.015);
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255, 255, 255, 0.03) 5px, rgba(255, 255, 255, 0.03) 10px);
+  border-top: 1px dashed rgba(255, 255, 255, 0.05);
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+  margin: 4px 0;
 }
 
 .grid-label {
@@ -262,11 +305,14 @@ main {
   box-shadow: 0 0 8px currentColor;
 }
 
-.seat.branch-ce { color: var(--color-ce); background-color: var(--color-ce); }
+.seat.branch-comps { color: var(--color-comps); background-color: var(--color-comps); }
 .seat.branch-it { color: var(--color-it); background-color: var(--color-it); }
+.seat.branch-aiml { color: var(--color-aiml); background-color: var(--color-aiml); }
+.seat.branch-aids { color: var(--color-aids); background-color: var(--color-aids); }
+.seat.branch-cse { color: var(--color-cse); background-color: var(--color-cse); }
+.seat.branch-mech { color: var(--color-mech); background-color: var(--color-mech); }
+.seat.branch-civil { color: var(--color-civil); background-color: var(--color-civil); }
 .seat.branch-extc { color: var(--color-extc); background-color: var(--color-extc); }
-.seat.branch-me { color: var(--color-me); background-color: var(--color-me); }
-.seat.branch-ee { color: var(--color-ee); background-color: var(--color-ee); }
 .seat.seat-overflow { color: var(--color-overflow); background-color: var(--color-overflow); }
 
 /* Seat Tooltip */
@@ -293,6 +339,23 @@ main {
 .seat:hover .tooltip {
   visibility: visible;
   opacity: 1;
+}
+
+/* Tooltip positions to avoid border cut-offs */
+.seat .tooltip.pos-down {
+  bottom: auto;
+  top: 125%;
+}
+
+.seat .tooltip.pos-left {
+  left: 0;
+  transform: none;
+}
+
+.seat .tooltip.pos-right {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .tooltip-title {

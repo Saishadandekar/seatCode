@@ -11,6 +11,17 @@ import './App.css';
 
 const BACKEND_URL = 'http://localhost:5000';
 
+const getRowLabel = (rowNum) => {
+  let label = '';
+  let temp = rowNum;
+  while (temp > 0) {
+    let remainder = (temp - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    temp = Math.floor((temp - 1) / 26);
+  }
+  return label;
+};
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('staff_token') || '');
   const [username, setUsername] = useState(localStorage.getItem('staff_username') || '');
@@ -349,12 +360,12 @@ function App() {
     return Object.values(allocations).filter(a => a.student && a.student.branch === branch).length;
   };
 
-  // Format seat display (e.g. S_11_5 -> Row 11, Col 5)
+  // Format seat display (e.g. S_11_5 -> Row K Col 5)
   const formatSeatId = (id) => {
     if (!id) return '-';
     const parts = id.split('_');
     if (parts.length === 3) {
-      return `Row ${parts[1]} Col ${parts[2]}`;
+      return `Row ${getRowLabel(parseInt(parts[1], 10))} Col ${parts[2]}`;
     }
     return id;
   };
@@ -503,20 +514,25 @@ function App() {
               <div className="seating-panel glass-panel">
                 <div className="panel-header">
                   <div className="panel-title"><Layout size={18} /> Auditorium Grid View</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    Row 1 is front row, Row 20 is back row. Hover seats to view details.
-                  </div>
                 </div>
 
                 <div className="grid-container">
+                  <div className="auditorium-stage">STAGE</div>
                   <div className="seating-grid">
                     {/* Header Columns */}
                     <div className="grid-label"></div>
-                    {Array.from({ length: 25 }, (_, i) => (
-                      <div key={`col-hdr-${i}`} className="grid-label column-header">
-                        {String(i + 1).padStart(2, '0')}
-                      </div>
-                    ))}
+                    {Array.from({ length: 25 }, (_, i) => {
+                      const colNum = i + 1;
+                      return (
+                        <React.Fragment key={`col-hdr-${i}`}>
+                          <div className="grid-label column-header">
+                            {String(colNum).padStart(2, '0')}
+                          </div>
+                          {colNum === 5 && <div className="grid-aisle-vertical-header"></div>}
+                          {colNum === 20 && <div className="grid-aisle-vertical-header"></div>}
+                        </React.Fragment>
+                      );
+                    })}
 
                     {/* Seating Layout Rows */}
                     {Array.from({ length: 20 }, (_, rIndex) => {
@@ -524,7 +540,7 @@ function App() {
                       return (
                         <React.Fragment key={`row-${rowNum}`}>
                           {/* Row side label */}
-                          <div className="grid-label">{String(rowNum).padStart(2, '0')}</div>
+                          <div className="grid-label">{getRowLabel(rowNum)}</div>
                           {Array.from({ length: 25 }, (_, cIndex) => {
                             const colNum = cIndex + 1;
                             const seatId = `S_${rowNum}_${colNum}`;
@@ -535,40 +551,45 @@ function App() {
                               if (allocation.status === 'overflow') {
                                 seatClass = 'occupied seat-overflow';
                               } else {
-                                seatClass = `occupied branch-${allocation.student.branch.toLowerCase()}`;
+                                seatClass = `occupied branch-${allocation.student.branch.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
                               }
                             }
 
+                            const tooltipClass = `tooltip ${rowNum <= 4 ? 'pos-down' : ''} ${colNum <= 4 ? 'pos-left' : colNum >= 22 ? 'pos-right' : ''}`;
+
                             return (
-                              <div 
-                                key={seatId} 
-                                className={`seat ${seatClass}`}
-                                style={{ color: allocation?.status === 'overflow' ? 'var(--color-overflow)' : `var(--color-${allocation?.student.branch.toLowerCase()})` }}
-                              >
-                                {allocation && (
-                                  <div className="tooltip">
-                                    <div className="tooltip-title">{allocation.student.name}</div>
-                                    <div className="tooltip-row">
-                                      <span>Roll No:</span>
-                                      <span className="tooltip-val">{allocation.student.rollNo}</span>
+                              <React.Fragment key={seatId}>
+                                <div 
+                                  className={`seat ${seatClass}`}
+                                  style={{ color: allocation?.status === 'overflow' ? 'var(--color-overflow)' : `var(--color-${allocation?.student.branch.toLowerCase().replace(/[^a-z0-9]/g, '')})` }}
+                                >
+                                  {allocation && (
+                                    <div className={tooltipClass}>
+                                      <div className="tooltip-title">{allocation.student.name}</div>
+                                      <div className="tooltip-row">
+                                        <span>Roll No:</span>
+                                        <span className="tooltip-val">{allocation.student.rollNo}</span>
+                                      </div>
+                                      <div className="tooltip-row">
+                                        <span>Branch:</span>
+                                        <span className="tooltip-val">{allocation.student.branch}{allocation.student.division ? `-${allocation.student.division}` : ''}</span>
+                                      </div>
+                                      <div className="tooltip-row">
+                                        <span>Seat:</span>
+                                        <span className="tooltip-val">{formatSeatId(seatId)}</span>
+                                      </div>
+                                      <div className="tooltip-row">
+                                        <span>Status:</span>
+                                        <span className="tooltip-val" style={{ color: allocation.status === 'overflow' ? 'var(--color-overflow)' : 'var(--color-it)' }}>
+                                          {allocation.status.toUpperCase()}
+                                        </span>
+                                      </div>
                                     </div>
-                                    <div className="tooltip-row">
-                                      <span>Branch:</span>
-                                      <span className="tooltip-val">{allocation.student.branch}-{allocation.student.division}</span>
-                                    </div>
-                                    <div className="tooltip-row">
-                                      <span>Seat:</span>
-                                      <span className="tooltip-val">{formatSeatId(seatId)}</span>
-                                    </div>
-                                    <div className="tooltip-row">
-                                      <span>Status:</span>
-                                      <span className="tooltip-val" style={{ color: allocation.status === 'overflow' ? 'var(--color-overflow)' : 'var(--color-it)' }}>
-                                        {allocation.status.toUpperCase()}
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
+                                  )}
+                                </div>
+                                {colNum === 5 && <div className="grid-aisle-vertical"></div>}
+                                {colNum === 20 && <div className="grid-aisle-vertical"></div>}
+                              </React.Fragment>
                             );
                           })}
                         </React.Fragment>
@@ -584,24 +605,36 @@ function App() {
                   <h3>Legend</h3>
                   <div className="legend-grid">
                     <div className="legend-item">
-                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-ce)' }}></div>
-                      <span>CE (Comp)</span>
+                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-comps)' }}></div>
+                      <span>COMPS</span>
                     </div>
                     <div className="legend-item">
                       <div className="legend-dot" style={{ backgroundColor: 'var(--color-it)' }}></div>
-                      <span>IT (InfoTech)</span>
+                      <span>IT</span>
+                    </div>
+                    <div className="legend-item">
+                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-aiml)' }}></div>
+                      <span>AIML</span>
+                    </div>
+                    <div className="legend-item">
+                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-aids)' }}></div>
+                      <span>AIDS</span>
+                    </div>
+                    <div className="legend-item">
+                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-cse)' }}></div>
+                      <span>CS&E</span>
+                    </div>
+                    <div className="legend-item">
+                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-mech)' }}></div>
+                      <span>MECH</span>
+                    </div>
+                    <div className="legend-item">
+                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-civil)' }}></div>
+                      <span>CIVIL</span>
                     </div>
                     <div className="legend-item">
                       <div className="legend-dot" style={{ backgroundColor: 'var(--color-extc)' }}></div>
-                      <span>EXTC (Telecom)</span>
-                    </div>
-                    <div className="legend-item">
-                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-me)' }}></div>
-                      <span>ME (Mech)</span>
-                    </div>
-                    <div className="legend-item">
-                      <div className="legend-dot" style={{ backgroundColor: 'var(--color-ee)' }}></div>
-                      <span>EE (Elec)</span>
+                      <span>EXTC</span>
                     </div>
                     <div className="legend-item">
                       <div className="legend-dot" style={{ backgroundColor: 'var(--color-overflow)' }}></div>
@@ -617,22 +650,30 @@ function App() {
                 <div className="side-block glass-panel">
                   <h3>Branch Stats</h3>
                   <div className="branch-list">
-                    {['CE', 'IT', 'EXTC', 'ME', 'EE'].map(br => {
-                      const count = getBranchOccupied(br);
-                      // Seed expected counts: A (40) + B (40) = 80 per branch
-                      const pct = ((count / 80) * 100).toFixed(0);
-                      const colorVar = `var(--color-${br.toLowerCase()})`;
+                    {[
+                      { name: 'COMPS', capacity: 210 },
+                      { name: 'IT', capacity: 210 },
+                      { name: 'AIML', capacity: 70 },
+                      { name: 'AIDS', capacity: 70 },
+                      { name: 'CS&E', capacity: 70 },
+                      { name: 'MECH', capacity: 70 },
+                      { name: 'CIVIL', capacity: 70 },
+                      { name: 'EXTC', capacity: 70 }
+                    ].map(br => {
+                      const count = getBranchOccupied(br.name);
+                      const pct = br.capacity > 0 ? ((count / br.capacity) * 100).toFixed(0) : 0;
+                      const colorVar = `var(--color-${br.name.toLowerCase().replace(/[^a-z0-9]/g, '')})`;
 
                       return (
-                        <div key={br} className="branch-progress-item">
+                        <div key={br.name} className="branch-progress-item">
                           <div className="branch-progress-label">
-                            <span>{br}</span>
-                            <span>{count} / 80 ({pct}%)</span>
+                            <span>{br.name}</span>
+                            <span>{count} / {br.capacity} ({pct}%)</span>
                           </div>
                           <div className="progress-track">
                             <div 
                               className="progress-bar" 
-                              style={{ width: `${Math.min(100, (count/80)*100)}%`, backgroundColor: colorVar }}
+                              style={{ width: `${Math.min(100, (count/br.capacity)*100)}%`, backgroundColor: colorVar }}
                             ></div>
                           </div>
                         </div>
@@ -687,7 +728,7 @@ function App() {
                       onClick={() => setSelectedStudent(s)}
                     >
                       <div className="student-list-item-name">{s.name}</div>
-                      <div className="student-list-item-sub">{s.roll_no} • {s.branch}-{s.division}</div>
+                      <div className="student-list-item-sub">{s.roll_no} • {s.branch}{s.division ? `-${s.division}` : ''}</div>
                     </div>
                   ))
                 }
@@ -713,9 +754,9 @@ function App() {
                     <div className="card-details">
                       <div className="card-name">{selectedStudent.name}</div>
                       <div className="card-roll">{selectedStudent.roll_no}</div>
-                      <div className="card-branch-tag" style={{ color: `var(--color-${selectedStudent.branch.toLowerCase()})`, borderColor: `var(--color-${selectedStudent.branch.toLowerCase()})` }}>
-                        {selectedStudent.branch} - DIV {selectedStudent.division}
-                      </div>
+                       <div className="card-branch-tag" style={{ color: `var(--color-${selectedStudent.branch.toLowerCase().replace(/[^a-z0-9]/g, '')})`, borderColor: `var(--color-${selectedStudent.branch.toLowerCase().replace(/[^a-z0-9]/g, '')})` }}>
+                         {selectedStudent.branch} {selectedStudent.division ? `- DIV ${selectedStudent.division}` : ''}
+                       </div>
                     </div>
 
                     {/* QR Code Container */}

@@ -49,6 +49,8 @@ CREATE TABLE zones (
     anchor_seat_id VARCHAR(20) REFERENCES auditorium_layout(seat_id) ON DELETE CASCADE,
     fill_direction VARCHAR(20) NOT NULL DEFAULT 'RIGHT_DOWN',
     expected_count INT NOT NULL,
+    width INT NOT NULL DEFAULT 5,
+    height INT NOT NULL DEFAULT 10,
     CONSTRAINT unique_event_zone UNIQUE(event_id, branch, division)
 );
 
