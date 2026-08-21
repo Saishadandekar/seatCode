@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "concurrently \"nodemon server.js\" \"npm --prefix frontend run dev\"",
     "seed": "node seed.js",
-    "simulation": "node simulation.js"
+    "simulation": "node simulation.js",
+    "test": "jest"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.5",
+    "jest": "^30.4.2",
     "nodemon": "^3.1.4"
   }
 }

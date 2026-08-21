@@ -211,6 +211,18 @@ async function allocateSeat(client, eventId, student) {
   throw new Error('Failed to allocate seat after multiple concurrent retry attempts');
 }
 
+/**
+ * Resets all allocations for a given event.
+ * 
+ * @param {import('pg').PoolClient} client - The pg client
+ * @param {number} eventId - The ID of the event
+ */
+async function resetZones(client, eventId) {
+  await client.query('DELETE FROM allocations WHERE event_id = $1', [eventId]);
+}
+
 module.exports = {
-  allocateSeat
+  allocateSeat,
+  resetZones
 };
+
