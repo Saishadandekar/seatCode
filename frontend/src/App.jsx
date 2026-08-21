@@ -4,8 +4,12 @@ import { io } from 'socket.io-client';
 import { 
   QrCode, Users, Layout, FileSpreadsheet, Shield, 
   CheckCircle, AlertTriangle, LogOut, Power, Search, 
-  UserCheck, RefreshCw, Camera, AlertCircle
+  UserCheck, RefreshCw, Camera, AlertCircle, BarChart2, TrendingUp, Calendar, AlertOctagon
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, 
+  XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, Legend, Cell
+} from 'recharts';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import './App.css';
 
@@ -54,19 +58,107 @@ function App() {
   const [absenteesList, setAbsenteesList] = useState([]);
   const [reportSearch, setReportSearch] = useState('');
 
-  // Load active event & dashboard stats
-  useEffect(() => {
-    fetchActiveEvent();
-  }, []);
+  // Analytics state
+  const [eventsList, setEventsList] = useState([]);
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [singleEventAnalytics, setSingleEventAnalytics] = useState(null);
+  const [trendsData, setTrendsData] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState('');
+
+  const fetchEventsList = async (activeId) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/events`);
+      if (res.ok) {
+        const data = await res.json();
+        setEventsList(data);
+        if (data.length > 0) {
+          const defaultId = activeId || data[0].id.toString();
+          setSelectedEventId(defaultId);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching events list:', err);
+    }
+  };
+
+  const fetchSingleEventAnalytics = async (eventId) => {
+    if (!eventId) return;
+    setAnalyticsLoading(true);
+    setAnalyticsError('');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/analytics/event/${eventId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSingleEventAnalytics(data);
+      } else {
+        setAnalyticsError('Failed to fetch event analytics.');
+      }
+    } catch (err) {
+      setAnalyticsError('Error connecting to analytics API.');
+      console.error(err);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
+  const fetchTrendsAnalytics = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/analytics/trends`);
+      if (res.ok) {
+        const data = await res.json();
+        setTrendsData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching trends:', err);
+    }
+  };
+
+  const selectedEventIdRef = useRef('');
+  const activeEventIdRef = useRef('');
 
   useEffect(() => {
-    if (activeEvent) {
-      fetchSeatingData(activeEvent.id);
-      fetchAbsentees(activeEvent.id);
-      // Fetch student list for simulator once event is loaded
-      fetchStudentsForSimulator();
-    }
+    selectedEventIdRef.current = selectedEventId;
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    activeEventIdRef.current = activeEvent ? activeEvent.id.toString() : '';
   }, [activeEvent]);
+
+  useEffect(() => {
+    if (activeTab === 'analytics') {
+      fetchTrendsAnalytics();
+    }
+  }, [activeTab]);
+
+  // Global selector loads data dynamically for selectedEventId
+  useEffect(() => {
+    if (selectedEventId) {
+      fetchSeatingData(selectedEventId);
+      fetchAbsentees(selectedEventId);
+      fetchStudentsForSimulator(selectedEventId);
+      fetchSingleEventAnalytics(selectedEventId);
+    }
+  }, [selectedEventId]);
+
+  // Load active event & event listings on mount
+  useEffect(() => {
+    const init = async () => {
+      let activeId = '';
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/events/active`);
+        if (res.ok) {
+          const data = await res.json();
+          setActiveEvent(data);
+          if (data) activeId = data.id.toString();
+        }
+      } catch (err) {
+        console.error('Error fetching active event on mount:', err);
+      }
+      await fetchEventsList(activeId);
+    };
+    init();
+  }, []);
 
   // Socket.io Real-time Setup
   useEffect(() => {
@@ -81,14 +173,16 @@ function App() {
     });
 
     socket.on('seat_updated', (data) => {
-      // Update allocations map dynamically
-      setAllocations(prev => ({
-        ...prev,
-        [data.seatId]: {
-          status: data.status,
-          student: data.student
-        }
-      }));
+      // Update allocations map dynamically if we are currently viewing the active event
+      if (selectedEventIdRef.current === activeEventIdRef.current) {
+        setAllocations(prev => ({
+          ...prev,
+          [data.seatId]: {
+            status: data.status,
+            student: data.student
+          }
+        }));
+      }
 
       // Update absentees list (remove student if present)
       setAbsenteesList(prev => prev.filter(s => s.id !== data.student.id));
@@ -174,17 +268,13 @@ function App() {
     }
   };
 
-  const fetchStudentsForSimulator = async () => {
+  const fetchStudentsForSimulator = async (eventId) => {
     try {
-      // We can fetch student details. Since we seeded them, let's load all 400.
-      // We will read them from the absentees route, or we can just fetch all students.
-      // For simulator simplicity, let's fetch absentees as the pool of scan candidates.
-      // (Any student can be scanned, present or absent)
-      const res = await fetch(`${BACKEND_URL}/api/reports/absentees/${activeEvent.id}`);
+      const res = await fetch(`${BACKEND_URL}/api/reports/absentees/${eventId}`);
       if (res.ok) {
         const data = await res.json();
         setStudentsList(data);
-        if (data.length > 0 && !selectedStudent) {
+        if (data.length > 0) {
           setSelectedStudent(data[0]);
         }
       }
@@ -238,10 +328,10 @@ function App() {
 
   // Trigger global overflow manually for simulation
   const toggleOverflowCutoff = async () => {
-    if (!activeEvent) return;
-    const currentlyTriggered = isOverflowCutoffPassed();
+    if (!selectedEventId) return;
+    const currentlyTriggered = isDashboardEventCutoffPassed();
     try {
-      const res = await fetch(`${BACKEND_URL}/api/events/${activeEvent.id}/toggle-overflow`, {
+      const res = await fetch(`${BACKEND_URL}/api/events/${selectedEventId}/toggle-overflow`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -251,20 +341,23 @@ function App() {
       });
       const data = await res.json();
       if (res.ok) {
-        setActiveEvent(prev => ({
-          ...prev,
-          overflow_cutoff_time: data.overflowCutoffTime
-        }));
+        setEventsList(prev => prev.map(e => e.id.toString() === selectedEventId ? { ...e, overflow_cutoff_time: data.overflowCutoffTime } : e));
+        if (activeEvent && activeEvent.id.toString() === selectedEventId) {
+          setActiveEvent(prev => ({
+            ...prev,
+            overflow_cutoff_time: data.overflowCutoffTime
+          }));
+        }
       }
     } catch (err) {
       console.error('Failed to toggle cutoff:', err);
     }
   };
 
-  // Check if current time > event's cutoff time
-  const isOverflowCutoffPassed = () => {
-    if (!activeEvent) return false;
-    return new Date() >= new Date(activeEvent.overflow_cutoff_time);
+  const isDashboardEventCutoffPassed = () => {
+    const selectedDashboardEvent = eventsList.find(e => e.id.toString() === selectedEventId);
+    if (!selectedDashboardEvent) return false;
+    return new Date() >= new Date(selectedDashboardEvent.overflow_cutoff_time);
   };
 
   // Call API to allocate seat
@@ -281,7 +374,7 @@ function App() {
         },
         body: JSON.stringify({
           qrToken: qrTokenStr,
-          eventId: activeEvent.id
+          eventId: selectedEventId
         })
       });
 
@@ -291,8 +384,8 @@ function App() {
         setScanResult(data);
         playBeep('success');
         // Refresh local listings
-        fetchSeatingData(activeEvent.id);
-        fetchAbsentees(activeEvent.id);
+        fetchSeatingData(selectedEventId);
+        fetchAbsentees(selectedEventId);
       } else {
         setScanError(data.error || 'Verification failed.');
         playBeep('error');
@@ -344,8 +437,8 @@ function App() {
   };
 
   const handleDownloadCSV = () => {
-    if (!activeEvent) return;
-    window.open(`${BACKEND_URL}/api/reports/csv/${activeEvent.id}`);
+    if (!selectedEventId) return;
+    window.open(`${BACKEND_URL}/api/reports/csv/${selectedEventId}`);
   };
 
   // Grid Statistics calculations
@@ -378,12 +471,23 @@ function App() {
           <p>Autonomous Event Seating & Attendance</p>
         </div>
 
-        {activeEvent && (
-          <div style={{ textAlign: 'center', fontSize: '0.85rem' }}>
-            <span style={{ color: 'var(--text-secondary)' }}>Active Event: </span>
-            <strong style={{ color: '#fff' }}>{activeEvent.name}</strong>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(255, 255, 255, 0.03)', padding: '0.4rem 1rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>CURRENT EVENT:</span>
+          <div className="select-container" style={{ position: 'relative' }}>
+            <select
+              className="search-input-box"
+              style={{ paddingRight: '2rem', cursor: 'pointer', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px', padding: '0.4rem 2rem 0.4rem 0.75rem', fontSize: '0.85rem', fontWeight: 600 }}
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+            >
+              {eventsList.map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+        </div>
 
         <div className="nav-tabs">
           <button 
@@ -415,6 +519,13 @@ function App() {
             onClick={() => setActiveTab('absentees')}
           >
             <FileSpreadsheet size={16} /> Absentees
+          </button>
+
+          <button 
+            className={`tab-btn ${activeTab === 'analytics' ? 'active' : ''}`}
+            onClick={() => setActiveTab('analytics')}
+          >
+            <BarChart2 size={16} /> Analytics
           </button>
 
           {token ? (
@@ -469,8 +580,9 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'dashboard' && activeEvent && (
+        {activeTab === 'dashboard' && selectedEventId && (
           <div>
+
             {/* Stats Overview */}
             <div className="stats-grid">
               <div className="stat-card glass-panel">
@@ -498,11 +610,11 @@ function App() {
               </div>
 
               <div className="stat-card glass-panel">
-                <div className="stat-icon" style={{ color: isOverflowCutoffPassed() ? 'var(--color-overflow)' : 'var(--text-secondary)' }}><Power size={20} /></div>
+                <div className="stat-icon" style={{ color: isDashboardEventCutoffPassed() ? 'var(--color-overflow)' : 'var(--text-secondary)' }}><Power size={20} /></div>
                 <div className="stat-info">
                   <h3>Overflow Cutoff</h3>
                   <div className="stat-val" style={{ fontSize: '0.9rem' }}>
-                    {isOverflowCutoffPassed() ? 'T-10m Cutoff Passed' : 'Active (Cutoff in future)'}
+                    {isDashboardEventCutoffPassed() ? 'T-10m Cutoff Passed' : 'Active (Cutoff in future)'}
                   </div>
                 </div>
               </div>
@@ -689,11 +801,11 @@ function App() {
                       Force trigger T-10 overflow to test dynamic fallback seating:
                     </p>
                     <button 
-                      className={`toggle-btn ${isOverflowCutoffPassed() ? 'active' : ''}`}
+                      className={`toggle-btn ${isDashboardEventCutoffPassed() ? 'active' : ''}`}
                       onClick={toggleOverflowCutoff}
                     >
                       <Power size={14} /> 
-                      {isOverflowCutoffPassed() ? 'Cutoff Cutoff EARLY (ACTIVE)' : 'Trigger Cutoff Cutoff NOW'}
+                      {isDashboardEventCutoffPassed() ? 'Cutoff Cutoff EARLY (ACTIVE)' : 'Trigger Cutoff Cutoff NOW'}
                     </button>
                   </div>
                 )}
@@ -702,7 +814,7 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'simulator' && activeEvent && (
+        {activeTab === 'simulator' && selectedEventId && (
           <div className="simulator-layout">
             {/* Student list sidebar */}
             <div className="student-selector-panel glass-panel">
@@ -806,7 +918,7 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'scanner' && token && activeEvent && (
+        {activeTab === 'scanner' && token && selectedEventId && (
           <div className="scanner-layout">
             <div className="scanner-box glass-panel">
               <div className="panel-header" style={{ width: '100%' }}>
@@ -899,7 +1011,7 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'absentees' && activeEvent && (
+        {activeTab === 'absentees' && selectedEventId && (
           <div className="reports-layout glass-panel" style={{ padding: '1.5rem' }}>
             <div className="reports-actions-row">
               <div className="panel-title"><FileSpreadsheet size={18} /> Student Seating & Attendance Roster</div>
@@ -968,6 +1080,258 @@ function App() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'analytics' && (
+          <div className="analytics-layout">
+            {/* Event Selector */}
+            <div className="analytics-selector-panel glass-panel" style={{ padding: '1.25rem 1.5rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff' }}>
+                    <BarChart2 size={20} style={{ color: 'var(--primary)' }} /> Seating & Attendance Analytics
+                  </h2>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Review scan efficiency, zone fill rates, and historical attendance trends</p>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <label htmlFor="event-selector" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>SELECT EVENT</label>
+                  <div className="select-container" style={{ position: 'relative' }}>
+                    <select
+                      id="event-selector"
+                      className="search-input-box"
+                      style={{ paddingRight: '2rem', cursor: 'pointer', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px', padding: '0.5rem 2rem 0.5rem 1rem' }}
+                      value={selectedEventId}
+                      onChange={(e) => setSelectedEventId(e.target.value)}
+                    >
+                      {eventsList.map(e => (
+                        <option key={e.id} value={e.id}>
+                          {e.name} ({new Date(e.date).toLocaleDateString()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {analyticsError && <div className="error-banner" style={{ marginBottom: '1.5rem' }}>{analyticsError}</div>}
+
+            {analyticsLoading ? (
+              <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <RefreshCw className="animate-spin" size={32} style={{ margin: '0 auto 1rem auto' }} />
+                <p>Loading analytics data...</p>
+              </div>
+            ) : (
+              singleEventAnalytics && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  
+                  {/* Single Event Stats Cards */}
+                  <div className="stats-grid">
+                    <div className="stat-card glass-panel">
+                      <div className="stat-icon" style={{ color: 'var(--primary)' }}><Users size={20} /></div>
+                      <div className="stat-info">
+                        <h3>Total Scanned</h3>
+                        <div className="stat-val">{singleEventAnalytics.total_allocations}</div>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Scanned attendees</p>
+                      </div>
+                    </div>
+
+                    <div className="stat-card glass-panel">
+                      <div className="stat-icon" style={{ color: 'var(--color-overflow)' }}><AlertTriangle size={20} /></div>
+                      <div className="stat-info">
+                        <h3>Overflow Rate</h3>
+                        <div className="stat-val">{singleEventAnalytics.overflow_rate}%</div>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Of total scans</p>
+                      </div>
+                    </div>
+
+                    <div className="stat-card glass-panel">
+                      <div className="stat-icon" style={{ color: '#f87171' }}><AlertOctagon size={20} /></div>
+                      <div className="stat-info">
+                        <h3>Total No-Shows</h3>
+                        <div className="stat-val">
+                          {singleEventAnalytics.fill_by_zone.reduce((sum, item) => sum + item.noShows, 0)}
+                        </div>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Expected but absent</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Single Event Visualizations */}
+                  <div className="dashboard-layout" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '1.5rem' }}>
+                    
+                    {/* Attendance Timeline LineChart */}
+                    <div className="seating-panel glass-panel" style={{ padding: '1.25rem 1.5rem' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <TrendingUp size={16} style={{ color: 'var(--primary)' }} /> Attendance Progress (Cumulative)
+                      </h3>
+                      {singleEventAnalytics.attendance_timeline.length === 0 ? (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                          No scan timeline data recorded.
+                        </div>
+                      ) : (
+                        <div style={{ width: '100%', height: '300px' }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={singleEventAnalytics.attendance_timeline} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                              <XAxis dataKey="time" stroke="var(--text-secondary)" fontSize={11} />
+                              <YAxis stroke="var(--text-secondary)" fontSize={11} />
+                              <ChartTooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px' }} />
+                              <Line type="monotone" dataKey="count" name="Cumulative Scans" stroke="var(--primary)" strokeWidth={2.5} activeDot={{ r: 6 }} dot={{ r: 3 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Zone Fill Rate BarChart */}
+                    <div className="seating-panel glass-panel" style={{ padding: '1.25rem 1.5rem' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Layout size={16} style={{ color: 'var(--color-it)' }} /> Zone Occupancy Fill Rate (%)
+                      </h3>
+                      <div style={{ width: '100%', height: '300px' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={singleEventAnalytics.fill_by_zone} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                            <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={10} />
+                            <YAxis stroke="var(--text-secondary)" fontSize={11} domain={[0, 100]} />
+                            <ChartTooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px' }} />
+                            <Bar dataKey="fillPercent" name="Fill Rate %" radius={[4, 4, 0, 0]}>
+                              {singleEventAnalytics.fill_by_zone.map((entry, index) => {
+                                const branchColor = `var(--color-${entry.branch.toLowerCase().replace(/[^a-z0-9]/g, '')})`;
+                                return <Cell key={`cell-${index}`} fill={branchColor} />;
+                              })}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section Divider */}
+                  <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '1rem 0' }} />
+
+                  {/* Cross-Event Trends */}
+                  <div>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <TrendingUp size={20} style={{ color: 'var(--color-aiml)' }} /> Cross-Event Trends
+                    </h2>
+
+                    {eventsList.length < 2 ? (
+                      <div className="trends-no-data glass-panel" style={{ padding: '3rem 2rem', textAlign: 'center', border: '1px dashed var(--border-color)' }}>
+                        <AlertCircle size={40} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#fff', marginBottom: '0.5rem' }}>Not enough events yet for trend analysis</h3>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '400px', margin: '0 auto' }}>
+                          At least 2 events are required in the database to run historical comparisons.
+                        </p>
+                      </div>
+                    ) : (
+                      trendsData && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                          
+                          {/* Trends Charts Grid */}
+                          <div className="dashboard-layout" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '1.5rem' }}>
+                            
+                            {/* Attendance Rate Trend */}
+                            <div className="seating-panel glass-panel" style={{ padding: '1.25rem 1.5rem' }}>
+                              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#fff', marginBottom: '1.25rem' }}>
+                                Average Attendance Rate over Time (%)
+                              </h3>
+                              <div style={{ width: '100%', height: '280px' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={trendsData.trends} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="eventName" stroke="var(--text-secondary)" fontSize={9} tickFormatter={(name) => name.replace(' Ceremony', '').replace(' Festival', '').replace(' Convocation', '')} />
+                                    <YAxis stroke="var(--text-secondary)" fontSize={11} domain={[0, 100]} />
+                                    <ChartTooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px' }} />
+                                    <Line type="monotone" dataKey="attendanceRate" name="Attendance %" stroke="var(--color-it)" strokeWidth={2.5} activeDot={{ r: 6 }} />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+
+                            {/* Seating Speed Trend */}
+                            <div className="seating-panel glass-panel" style={{ padding: '1.25rem 1.5rem' }}>
+                              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#fff', marginBottom: '1.25rem' }}>
+                                Seating Speed: Time-to-90% Seated (minutes)
+                              </h3>
+                              <div style={{ width: '100%', height: '280px' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={trendsData.trends} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="eventName" stroke="var(--text-secondary)" fontSize={9} tickFormatter={(name) => name.replace(' Ceremony', '').replace(' Festival', '').replace(' Convocation', '')} />
+                                    <YAxis stroke="var(--text-secondary)" fontSize={11} />
+                                    <ChartTooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px' }} />
+                                    <Line type="monotone" dataKey="timeTo90Percent" name="Minutes" stroke="var(--color-extc)" strokeWidth={2.5} activeDot={{ r: 6 }} connectNulls />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+
+                            {/* Overflow Rate Trend */}
+                            <div className="seating-panel glass-panel" style={{ padding: '1.25rem 1.5rem' }}>
+                              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#fff', marginBottom: '1.25rem' }}>
+                                Overflow Rate Trend (%)
+                              </h3>
+                              <div style={{ width: '100%', height: '280px' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={trendsData.trends} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="eventName" stroke="var(--text-secondary)" fontSize={9} tickFormatter={(name) => name.replace(' Ceremony', '').replace(' Festival', '').replace(' Convocation', '')} />
+                                    <YAxis stroke="var(--text-secondary)" fontSize={11} />
+                                    <ChartTooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px' }} />
+                                    <Line type="monotone" dataKey="overflowRate" name="Overflow %" stroke="var(--color-overflow)" strokeWidth={2.5} activeDot={{ r: 6 }} />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+
+                            {/* Reporting Accuracy per Branch */}
+                            <div className="seating-panel glass-panel" style={{ padding: '1.25rem 1.5rem' }}>
+                              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#fff', marginBottom: '1.25rem' }}>
+                                Average Attendance vs Expected Capacity per Branch (%)
+                              </h3>
+                              <div style={{ width: '100%', height: '280px' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart data={trendsData.under_over_reporting} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="branch" stroke="var(--text-secondary)" fontSize={11} />
+                                    <YAxis stroke="var(--text-secondary)" fontSize={11} />
+                                    <ChartTooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px' }} />
+                                    <Bar dataKey="avgRatioPercent" name="Avg Attendance %" radius={[4, 4, 0, 0]}>
+                                      {trendsData.under_over_reporting.map((entry, index) => {
+                                        let fill = 'var(--primary)';
+                                        if (entry.status === 'under-reporting') fill = '#f87171'; // Red
+                                        else if (entry.status === 'over-reporting') fill = '#fbbf24'; // Amber
+                                        return <Cell key={`cell-${index}`} fill={fill} />;
+                                      })}
+                                    </Bar>
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '0.5rem', fontSize: '0.7rem' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#f87171' }}>
+                                  <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#f87171', borderRadius: '50%' }}></span> Under-reporting (&lt;80%)
+                                </span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#fbbf24' }}>
+                                  <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#fbbf24', borderRadius: '50%' }}></span> Over-reporting (&gt;100%)
+                                </span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--primary)' }}>
+                                  <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: 'var(--primary)', borderRadius: '50%' }}></span> Normal (80% - 100%)
+                                </span>
+                              </div>
+                            </div>
+
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )
+            )}
           </div>
         )}
       </main>

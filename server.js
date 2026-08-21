@@ -321,6 +321,215 @@ app.get('/api/reports/csv/:eventId', async (req, res) => {
   }
 });
 
+// 7. Events List API
+app.get('/api/events', async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT id, name, date, overflow_cutoff_time, overflow_fill_threshold FROM events ORDER BY date DESC'
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Fetch events error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 8. Single Event Analytics API
+app.get('/api/analytics/event/:eventId', async (req, res) => {
+  const eventId = req.params.eventId;
+  try {
+    // 1. Attendance Timeline (cumulative count in 5-min intervals from event start)
+    const timelineRes = await db.query(
+      `SELECT 
+         FLOOR(EXTRACT(EPOCH FROM (a.scanned_at - e.date)) / 300) * 5 AS interval_minutes,
+         COUNT(*) AS scan_count
+       FROM allocations a
+       JOIN events e ON a.event_id = e.id
+       WHERE a.event_id = $1
+       GROUP BY interval_minutes
+       ORDER BY interval_minutes ASC`,
+      [eventId]
+    );
+
+    let cumulative = 0;
+    const attendanceTimeline = timelineRes.rows.map(row => {
+      cumulative += parseInt(row.scan_count, 10);
+      const min = parseInt(row.interval_minutes, 10);
+      return {
+        minutes: min,
+        time: `${min >= 0 ? '+' : ''}${min}m`,
+        count: cumulative
+      };
+    });
+
+    // 2. Fill by zone & No shows
+    const zoneRes = await db.query(
+      `SELECT 
+         z.branch,
+         z.division,
+         z.expected_count,
+         COUNT(a.id) AS allocated_count
+       FROM zones z
+       LEFT JOIN students s ON s.branch = z.branch AND s.division = z.division
+       LEFT JOIN allocations a ON a.student_id = s.id AND a.event_id = z.event_id
+       WHERE z.event_id = $1
+       GROUP BY z.branch, z.division, z.expected_count
+       ORDER BY z.branch ASC, z.division ASC`,
+      [eventId]
+    );
+
+    const fillByZone = zoneRes.rows.map(row => {
+      const expected = parseInt(row.expected_count, 10);
+      const allocated = parseInt(row.allocated_count, 10);
+      const fillPercent = expected > 0 ? (allocated / expected) * 100 : 0;
+      const noShows = Math.max(0, expected - allocated);
+      return {
+        branch: row.branch,
+        division: row.division,
+        name: `${row.branch}${row.division ? '-' + row.division : ''}`,
+        expected,
+        allocated,
+        fillPercent: parseFloat(fillPercent.toFixed(1)),
+        noShows
+      };
+    });
+
+    // 3. Overflow Rate
+    const overflowRes = await db.query(
+      `SELECT 
+         COUNT(CASE WHEN status = 'overflow' THEN 1 END) AS overflow_count,
+         COUNT(CASE WHEN status = 'allocated' THEN 1 END) AS allocated_count,
+         COUNT(*) AS total_count
+       FROM allocations
+       WHERE event_id = $1`,
+      [eventId]
+    );
+
+    const overflowData = overflowRes.rows[0];
+    const totalAllocations = parseInt(overflowData.total_count, 10);
+    const overflowCount = parseInt(overflowData.overflow_count, 10);
+    const overflowRate = totalAllocations > 0 ? parseFloat(((overflowCount / totalAllocations) * 100).toFixed(1)) : 0;
+
+    res.json({
+      attendance_timeline: attendanceTimeline,
+      fill_by_zone: fillByZone,
+      overflow_rate: overflowRate,
+      total_allocations: totalAllocations
+    });
+  } catch (err) {
+    console.error('Fetch event analytics error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 9. Cross-Event Trends API
+app.get('/api/analytics/trends', async (req, res) => {
+  try {
+    const eventsRes = await db.query('SELECT id, name, date FROM events ORDER BY date ASC');
+    const events = eventsRes.rows;
+
+    const trends = [];
+    for (const event of events) {
+      const statsRes = await db.query(
+        `SELECT 
+           (SELECT COUNT(*) FROM allocations WHERE event_id = $1) AS scanned,
+           (SELECT COALESCE(SUM(expected_count), 0) FROM zones WHERE event_id = $1) AS expected,
+           (SELECT COUNT(*) FROM allocations WHERE event_id = $1 AND status = 'overflow') AS overflow`,
+        [event.id]
+      );
+
+      const stats = statsRes.rows[0];
+      const scanned = parseInt(stats.scanned, 10);
+      const expected = parseInt(stats.expected, 10);
+      const overflow = parseInt(stats.overflow, 10);
+
+      const attendanceRate = expected > 0 ? parseFloat(((scanned / expected) * 100).toFixed(1)) : 0;
+      const overflowRate = scanned > 0 ? parseFloat(((overflow / scanned) * 100).toFixed(1)) : 0;
+
+      let timeTo90 = null;
+      if (scanned > 0) {
+        const targetIndex = Math.ceil(scanned * 0.9);
+        const scanRes = await db.query(
+          `SELECT scanned_at FROM allocations 
+           WHERE event_id = $1 
+           ORDER BY scanned_at ASC 
+           LIMIT 1 OFFSET $2`,
+          [event.id, targetIndex - 1]
+        );
+        if (scanRes.rows.length > 0) {
+          const targetTime = new Date(scanRes.rows[0].scanned_at);
+          const startTime = new Date(event.date);
+          timeTo90 = Math.round((targetTime - startTime) / 60000);
+        }
+      }
+
+      trends.push({
+        eventId: event.id,
+        eventName: event.name,
+        eventDate: event.date,
+        attendanceRate,
+        overflowRate,
+        timeTo90Percent: timeTo90
+      });
+    }
+
+    const branchRes = await db.query(
+      `SELECT 
+         z.branch,
+         z.event_id,
+         SUM(z.expected_count) AS expected
+       FROM zones z
+       GROUP BY z.branch, z.event_id`
+    );
+
+    const branchMap = {};
+    for (const row of branchRes.rows) {
+      const expected = parseInt(row.expected, 10);
+      if (expected === 0) continue;
+
+      const actualRes = await db.query(
+        `SELECT COUNT(*) FROM allocations a
+         JOIN students s ON a.student_id = s.id
+         WHERE a.event_id = $1 AND s.branch = $2`,
+        [row.event_id, row.branch]
+      );
+      const actual = parseInt(actualRes.rows[0].count, 10);
+      const ratio = actual / expected;
+
+      if (!branchMap[row.branch]) {
+        branchMap[row.branch] = [];
+      }
+      branchMap[row.branch].push(ratio);
+    }
+
+    const underOverReporting = [];
+    for (const branch in branchMap) {
+      const ratios = branchMap[branch];
+      const avgRatio = ratios.reduce((sum, r) => sum + r, 0) / ratios.length;
+      const avgRatioPercent = parseFloat((avgRatio * 100).toFixed(1));
+      
+      let status = 'normal';
+      if (avgRatioPercent < 80.0) status = 'under-reporting';
+      else if (avgRatioPercent > 100.0) status = 'over-reporting';
+
+      underOverReporting.push({
+        branch,
+        avgRatioPercent,
+        status
+      });
+    }
+
+    res.json({
+      trends,
+      under_over_reporting: underOverReporting
+    });
+  } catch (err) {
+    console.error('Fetch trends analytics error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
