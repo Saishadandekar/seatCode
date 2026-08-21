@@ -1,16 +1,18 @@
-# React + Vite
+# SeatCode Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + Vite frontend application for the SeatCode Seating and Attendance System.
 
-Currently, two official plugins are available:
+## Features
+- **Live Seating Grid**: Visual interactive 20x25 auditorium grid with real-time seat assignment updates over WebSockets (`socket.io-client`).
+- **QR Code Scanner**: Integrated camera scanner (`html5-qrcode`) for fast attendee verification and seat check-in.
+- **Analytics & Dashboard**: Occupancy and zone metrics visualized with `recharts`.
+- **Staff Authentication**: Secure login and JWT-based session management.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Scripts
 
-## React Compiler
+From the `frontend` folder:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- `npm run dev`: Starts the local Vite dev server (defaults to `http://localhost:5173`).
+- `npm run build`: Bundles the application for production into `dist/`.
+- `npm run preview`: Previews the production build locally.
+- `npm run lint`: Runs `oxlint` for fast code linting.

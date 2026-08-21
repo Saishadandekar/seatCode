@@ -1,6 +1,6 @@
 # SeatCode Seating and Attendance System
 
-A seating allocation and attendance management system for events, featuring real-time seating updates via WebSockets (Socket.io), QR code student identification, and dynamic zone-based seating allocation with threshold-triggered overflow logic.
+A real-time seating allocation and attendance management system for events, featuring live seating updates via WebSockets (Socket.io), QR code student identification, and dynamic zone-based seating allocation with threshold-triggered overflow logic.
 
 ## Project Structure
 
@@ -9,13 +9,15 @@ seatCode/
 ├── frontend/             # React + Vite Frontend application
 │   ├── src/              # React source files (components, App.jsx, App.css)
 │   ├── package.json      # Frontend scripts and dependencies
-│   └── vite.config.js    # Vite configuration
-├── package.json          # Backend scripts and dependencies
+│   ├── vite.config.js    # Vite configuration
+│   └── .oxlintrc.json    # Oxlint configuration
+├── package.json          # Backend & workspace scripts and dependencies
 ├── server.js             # Express & Socket.io server
 ├── db.js                 # PostgreSQL connection pool using pg
 ├── schema.sql            # Database tables and constraints schema
 ├── seed.js               # Database initialization and mock data generator
 ├── allocation.js         # Core seat allocation logic
+├── allocation.test.js    # Jest test suite for allocation & overflow logic
 ├── simulation.js         # CLI-based auditorium seating simulation script
 └── .env                  # Configuration variables (port, db connection, JWT secret)
 ```
@@ -25,24 +27,29 @@ seatCode/
 ## Getting Started
 
 ### 1. Prerequisites
-- **Node.js** (v16.x or higher recommended)
+- **Node.js** (v18.x or higher recommended)
 - **npm** (v7.x or higher)
 - **PostgreSQL Database**: 
   - *Note:* The project is pre-configured with a hosted Neon PostgreSQL database in the `.env` file (`DATABASE_URL`). You do not need to install local PostgreSQL to run this, provided you have internet access.
 
 ---
 
-### 2. Backend Setup & Running
+### 2. Installation & Setup
 
-From the **root directory** (`seatCode/`):
-
-1. **Install Backend Dependencies:**
+1. **Install Root/Backend Dependencies:**
    ```bash
    npm install
    ```
 
-2. **Seed the Database:**
-   This command creates the required schema, inserts a 20x25 grid layout (500 seats), registers a default staff user, generates a convocations event, and seeds 400 mock students with signed QR tokens:
+2. **Install Frontend Dependencies:**
+   ```bash
+   cd frontend
+   npm install
+   cd ..
+   ```
+
+3. **Seed the Database:**
+   This command creates the required schema, inserts a 20x25 grid layout (500 seats), registers a default staff user, generates a convocation event, and seeds 400 mock students with signed QR tokens:
    ```bash
    npm run seed
    ```
@@ -50,40 +57,51 @@ From the **root directory** (`seatCode/`):
    - **Username:** `admin`
    - **Password:** `password123`
 
-3. **Start the Backend Server (Development Mode):**
-   Starts the Express server with file watching via `nodemon`:
-   ```bash
-   npm run dev
-   ```
-   The backend server runs at `http://localhost:5000`.
+---
+
+### 3. Running the Application
+
+#### Option A: Run Full Stack Concurrently (Recommended)
+From the **root directory** (`seatCode/`):
+```bash
+npm run dev
+```
+This starts both the backend (`nodemon server.js` on port `5000`) and the frontend Vite dev server (on `http://localhost:5173`) concurrently using `concurrently`.
+
+#### Option B: Run Backend and Frontend Separately
+- **Backend Only (from root directory):**
+  ```bash
+  npm start
+  ```
+  or with auto-reload:
+  ```bash
+  npx nodemon server.js
+  ```
+  Runs at `http://localhost:5000`.
+
+- **Frontend Only (from `frontend/` directory):**
+  ```bash
+  cd frontend
+  npm run dev
+  ```
+  Runs at `http://localhost:5173`.
 
 ---
 
-### 3. Frontend Setup & Running
+### 4. Running the Test Suite
 
-From the **frontend directory** (`seatCode/frontend/`):
+To run the Jest test suite covering seat allocation, idempotency on re-scans, and zone overflow assignments:
 
-1. **Navigate to the frontend folder:**
-   ```bash
-   cd frontend
-   ```
-
-2. **Install Frontend Dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Start the Vite Development Server:**
-   ```bash
-   npm run dev
-   ```
-   Open your browser and navigate to the printed URL (typically `http://localhost:5173`).
+From the **root directory** (`seatCode/`):
+```bash
+npm test
+```
 
 ---
 
-### 4. Running the Standalone Seating Simulation
+### 5. Running the Standalone Seating Simulation
 
-To run the console-based dynamic zone allocation simulation that tests the seating grid boundaries, fill directions, and threshold-triggered overflow:
+To run the console-based dynamic zone allocation simulation that tests seating grid boundaries, fill directions, and threshold-triggered overflow:
 
 From the **root directory** (`seatCode/`):
 ```bash
